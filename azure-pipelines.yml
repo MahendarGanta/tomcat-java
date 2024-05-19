@@ -1,0 +1,68 @@
+# Starter pipeline
+# Start with a minimal pipeline that you can customize to build and deploy your code.
+# Add steps that build, run tests, deploy, and more:
+# https://aka.ms/yaml
+
+trigger:
+- master
+
+pool:
+  vmImage: ubuntu-latest
+
+steps:
+- script: echo $(Build.BuildId)
+  displayName: 'Display the Build-ID'
+
+- script: ls -al && pwd
+  displayName: 'List Files & Current Working Directory'
+
+- script: sudo apt update >> /dev/null 2>&1 && sudo apt install -y openjdk-8-jdk >> /dev/null 2>&1 && java -version
+  displayName: 'Installing openjdk 8 and Check Java Version'
+
+- script: ls -al && chmod 700 build.sh && sudo bash ./build.sh && ls -al
+  displayName: 'Run the build script'
+
+- script: ls -al && mv ROOT.war ROOT$(Build.BuildId).war && ls -al
+  displayName: 'List Files & Rename ROOT.war'
+
+- task: CopyFiles@2
+  inputs:
+    Contents: 'ROOT$(Build.BuildId).war'
+    TargetFolder: '$(Build.ArtifactStagingDirectory)'
+    Overwrite: true
+  displayName: 'Copying WAR file to ArtifactStagingDirectory'
+
+- script: ls -al $(Build.ArtifactSrtagingDirectory)
+  displayName: 'List Build Artifacts Staging Folder'
+
+- task: PublishBuildArtifacts@1
+  inputs: 
+    PathtoPublish: '$(Build.ArtifactStagingDirectory)'
+    ArtifactName: 'ROOT$(Build.BuildId).war'
+    publishLocation: 'Container'
+  displayName: 'Publishing WAR Artifact.'
+
+- task: AzureCLI@2
+  inputs:
+    azureSubscription: 'gmahender10-ARM'
+    scriptType: 'bash'
+    scriptLocation: 'inlineScript'
+    inlineScript: 
+      az storage blob upload-batch --account-name gmahender10 --account-key $(STORAGE_ACCOUNT_KEY) --destination artifacts --source /home/vsts/work/1/a/
+  displayName: 'Upload artifacts to Azure Blob'
+
+- task: Docker@2
+  inputs:
+    containerRegistry: 'dockerhub-connection'
+    repository: 'mahender1020/java-app'
+    command: 'buildAndPush'
+    Dockerfile: '**/Dockerfile'
+  displayName: 'Creating & Pushing Docker image to Docker Hub'
+
+- task: Docker@2
+  inputs:
+    containerRegistry: 'ACR-connection'
+    repository: 'javaapplication'
+    command: 'buildAndPush'
+    Dockerfile: '**/Dockerfile'
+  displayName: 'Creating & Pushing Docker image to Azure ACR'
